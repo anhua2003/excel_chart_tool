@@ -4,4 +4,3 @@ plotly
 openpyxl
 kaleido
 xlsxwriter
-io
