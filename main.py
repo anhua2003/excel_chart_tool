@@ -38,6 +38,12 @@ LANG = {
     }
 }
 
+st.set_page_config(
+    page_title="Excel to Chart",
+    page_icon="📊",
+    layout="wide",
+)
+
 # Chọn ngôn ngữ
 lang = st.selectbox("🌐 Language / Ngôn ngữ", ["vi", "en"])
 T = LANG[lang]
