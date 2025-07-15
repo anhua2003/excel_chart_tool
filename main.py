@@ -83,6 +83,7 @@ file = st.session_state.uploaded_file
 
 if file:
     df = pd.read_excel(file)
+    df.index += 1
     st.write(T["data"])
     st.dataframe(df)
 
