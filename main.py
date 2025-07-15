@@ -103,13 +103,8 @@ if file:
     combine_chart = st.radio(T["combined_type"], [T["combined_one"], T["combined_n"]], key="combine_mode") if chart_type != T["chart_pie"] else None
 
     # 🧠 Gộp dữ liệu trùng `x_axis`
-    if chart_type == T["chart_pie"]:
-        grouped = df_subset.groupby(x_axis, as_index=False)[y_axis[0]].sum(numeric_only=True)
-    else:
-        grouped = df_subset.groupby(x_axis, as_index=False)[y_axis].sum(numeric_only=True)
-
+    grouped = df_subset.groupby(x_axis, as_index=False)[y_axis].sum(numeric_only=True)
     st.session_state.grouped = grouped
-
    
     if "figures" not in st.session_state:
         st.session_state.figures = {}
@@ -119,8 +114,9 @@ if file:
 
         if chart_type == T["chart_pie"]:
             for y in y_axis:
-                fig = px.pie(grouped, names=x_axis, values=y, title=f"{y} by {x_axis}", color_discrete_sequence=px.colors.qualitative.Plotly)
-                st.session_state.figures[y] = fig
+                if y in grouped.columns:
+                    fig = px.pie(grouped, names=x_axis, values=y, title=f"{y} by {x_axis}", color_discrete_sequence=px.colors.qualitative.Plotly)
+                    st.session_state.figures[y] = fig
 
         elif combine_chart == T["combined_one"]:
             if chart_type == T["chart_bar"]:
@@ -180,7 +176,7 @@ if file:
                 chart_type_excel = 'bar'
             else:
                 chart_type_excel = 'column'
-                
+
             chart = wb.add_chart({'type': chart_type_excel})
             chart.add_series({
                 'name': y,
