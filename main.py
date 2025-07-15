@@ -23,6 +23,9 @@ LANG = {
         "download_excel": "⬇️ Tải Excel (biểu đồ thật)",
         "download_html": "⬇️ Tải biểu đồ HTML",
         "download_png": "⬇️ Tải ảnh biểu đồ PNG",
+        "combined_one": "Gộp vào 1 biểu đồ",
+        "combined_n" : "Tách từng biểu đồ",
+        "combined_type": "📌 Cách vẽ",
     },
     "en": {
         "title": "🧠 Create Chart from Excel",
@@ -42,12 +45,27 @@ LANG = {
         "download_excel": "⬇️ Download Excel (real chart)",
         "download_html": "⬇️ Download HTML chart",
         "download_png": "⬇️ Download PNG chart",
+        "combined_one": "Combined",
+        "combined_n" : "Non-combined",
+        "combined_type": "📌 Colouration",
     }
 }
 
 st.set_page_config(page_title="Excel Chart Tool", page_icon="📊")
 
 lang = st.selectbox("🌐 Language / Ngôn ngữ", ["vi", "en"], key="lang")
+
+if "lang_old" not in st.session_state:
+    st.session_state.lang_old = lang
+elif st.session_state.lang_old != lang:
+    st.session_state.lang_old = lang
+
+    # ✅ Giữ lại uploaded_file, lang, lang_old
+    keys_to_keep = {"uploaded_file", "lang", "lang_old"}
+    keys_to_clear = [k for k in st.session_state.keys() if k not in keys_to_keep]
+    for k in keys_to_clear:
+        del st.session_state[k]
+
 T = LANG[lang]
 
 st.title(T["title"])
@@ -68,7 +86,7 @@ if file:
 
     total_rows = df.shape[0]
     start_row = st.number_input(T["start_row"], min_value=1, max_value=total_rows, value=1)
-    end_row = st.number_input(T["end_row"], min_value=start_row, max_value=total_rows, value=min(start_row+2, total_rows))
+    end_row = st.number_input(T["end_row"], min_value=start_row, max_value=total_rows, value=min(start_row + 2, total_rows))
 
     df_subset = df.iloc[start_row - 1:end_row]
     st.write(T["subset"])
@@ -80,31 +98,48 @@ if file:
     x_axis = st.selectbox(T["x_axis"], all_cols)
     y_axis = st.multiselect(T["y_axis"], numeric_cols)
     chart_type = st.selectbox(T["chart_type"], [T["chart_bar"], T["chart_line"], T["chart_pie"]])
+    combine_chart = st.radio(T["combined_type"], [T["combined_one"], T["combined_n"]], key="combine_mode") if chart_type != T["chart_pie"] else None
+
+
+    if "figures" not in st.session_state:
+        st.session_state.figures = {}
 
     if st.button(T["draw_btn"]) and x_axis and y_axis:
-        st.session_state.figures = []
-        for y in y_axis:
-            if chart_type == T["chart_bar"]:
-                fig = px.bar(df_subset, x=x_axis, y=y, title=f"{y} vs {x_axis}")
-            elif chart_type == T["chart_line"]:
-                fig = px.line(df_subset, x=x_axis, y=y, title=f"{y} vs {x_axis}")
-            elif chart_type == T["chart_pie"]:
-                fig = px.pie(df_subset, names=x_axis, values=y, title=f"{y} by {x_axis}")
-            st.session_state.figures.append((fig, y, df_subset, x_axis, chart_type))
+        st.session_state.figures.clear()
 
-if "figures" in st.session_state:
-    for fig, y, df_subset, x_axis, chart_type in st.session_state.figures:
+        if chart_type == T["chart_pie"]:
+            for y in y_axis:
+                fig = px.pie(df_subset, names=x_axis, values=y, title=f"{y} by {x_axis}", color_discrete_sequence=px.colors.qualitative.Plotly)
+                st.session_state.figures[y] = fig
+
+        elif combine_chart == T["combined_one"]:
+            if chart_type == T["chart_bar"]:
+                fig = px.bar(df_subset, x=x_axis, y=y_axis, title=" vs ".join(y_axis), color_discrete_sequence=px.colors.qualitative.Plotly)
+                fig.update_layout(barmode='group')  # 🟢 Quan trọng
+            else:
+                fig = px.line(df_subset, x=x_axis, y=y_axis, title=" vs ".join(y_axis), color_discrete_sequence=px.colors.qualitative.Plotly)
+            st.session_state.figures["combined"] = fig
+
+        elif combine_chart == T["combined_n"]:
+            for y in y_axis:
+                if chart_type == T["chart_bar"]:
+                    fig = px.bar(df_subset, x=x_axis, y=y, title=f"{y} vs {x_axis}", color_discrete_sequence=px.colors.qualitative.Plotly)
+                else:
+                    fig = px.line(df_subset, x=x_axis, y=y, title=f"{y} vs {x_axis}", color_discrete_sequence=px.colors.qualitative.Plotly)
+                st.session_state.figures[y] = fig
+
+    # Hiển thị và tải các biểu đồ đã lưu
+    for y, fig in st.session_state.figures.items():
+        st.subheader(f"📊 {y}")
         st.plotly_chart(fig)
 
         # HTML download
-        # fig.update_layout(template="plotly_white")  # Ép dùng nền trắng
-        fig.update_traces(marker_color="#1f77b4")  # Xanh dương chuẩn
-        fig.update_layout(
-            template="plotly_white",
-            paper_bgcolor='white',
-            plot_bgcolor='white',
-            font_color='black'
-        )
+        # fig.update_layout(
+        #     template="plotly_white",
+        #     paper_bgcolor='white',
+        #     plot_bgcolor='white',
+        #     font_color='black'
+        # )
         html_bytes = fig.to_html(full_html=True, include_plotlyjs='include').encode("utf-8")
         st.download_button(
             label=T["download_html"] + f" ({y})",
@@ -113,34 +148,72 @@ if "figures" in st.session_state:
             mime="text/html"
         )
 
-        # Excel download (dùng BytesIO)
-        output = io.BytesIO()
-        wb = xlsxwriter.Workbook(output, {'in_memory': True})
-        ws = wb.add_worksheet("Data")
+        # ✅ Chỉ xuất Excel nếu `y` là cột hợp lệ
+        if y in df_subset.columns:
+            output = io.BytesIO()
+            wb = xlsxwriter.Workbook(output, {'in_memory': True})
+            ws = wb.add_worksheet("Data")
 
-        for col_idx, col in enumerate(df_subset.columns):
-            ws.write(0, col_idx, col)
-            for row_idx, val in enumerate(df_subset[col]):
-                ws.write(row_idx + 1, col_idx, val)
+            for col_idx, col in enumerate(df_subset.columns):
+                ws.write(0, col_idx, col)
+                for row_idx, val in enumerate(df_subset[col]):
+                    ws.write(row_idx + 1, col_idx, val)
 
-        col_idx = df_subset.columns.get_loc(y)
-        x_idx = df_subset.columns.get_loc(x_axis)
+            col_idx = df_subset.columns.get_loc(y)
+            x_idx = df_subset.columns.get_loc(x_axis)
 
-        chart_type_excel = 'column' if chart_type != T["chart_pie"] else 'pie'
-        chart = wb.add_chart({'type': chart_type_excel})
+            chart_type_excel = 'column' if chart_type != T["chart_pie"] else 'pie'
+            chart = wb.add_chart({'type': chart_type_excel})
+            chart.add_series({
+                'name': y,
+                'values': f'=Data!${chr(65 + col_idx)}$2:${chr(65 + col_idx)}${len(df_subset) + 1}',
+                'categories': f'=Data!${chr(65 + x_idx)}$2:${chr(65 + x_idx)}${len(df_subset) + 1}'
+            })
 
-        chart.add_series({
-            'name': y,
-            'values': f'=Data!${chr(65+col_idx)}$2:${chr(65+col_idx)}${len(df_subset)+1}',
-            'categories': f'=Data!${chr(65+x_idx)}$2:${chr(65+x_idx)}${len(df_subset)+1}'
-        })
-        ws.insert_chart("H2", chart)
-        wb.close()
-        output.seek(0)
+            ws.insert_chart("H2", chart)
+            wb.close()
+            output.seek(0)
 
-        st.download_button(
-            label=T["download_excel"] + f" ({y})",
-            data=output,
-            file_name=f"chart_{y}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            st.download_button(
+                label=T["download_excel"] + f" ({y})",
+                data=output,
+                file_name=f"chart_{y}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        elif y == "combined":
+            output = io.BytesIO()
+            wb = xlsxwriter.Workbook(output, {'in_memory': True})
+            ws = wb.add_worksheet("Data")
+
+            for col_idx, col in enumerate(df_subset.columns):
+                ws.write(0, col_idx, col)
+                for row_idx, val in enumerate(df_subset[col]):
+                    ws.write(row_idx + 1, col_idx, val)
+
+            x_idx = df_subset.columns.get_loc(x_axis)
+            if chart_type == T["chart_bar"]:
+                chart_type_excel = 'column'
+            elif chart_type == T["chart_line"]:
+                chart_type_excel = 'line'
+            elif chart_type == T["chart_pie"]:
+                chart_type_excel = 'pie'
+            chart = wb.add_chart({'type': chart_type_excel})
+
+            for y_col in y_axis:
+                y_idx = df_subset.columns.get_loc(y_col)
+                chart.add_series({
+                    'name': y_col,
+                    'values': f'=Data!${chr(65 + y_idx)}$2:${chr(65 + y_idx)}${len(df_subset) + 1}',
+                    'categories': f'=Data!${chr(65 + x_idx)}$2:${chr(65 + x_idx)}${len(df_subset) + 1}'
+                })
+
+            ws.insert_chart("H2", chart)
+            wb.close()
+            output.seek(0)
+
+            st.download_button(
+                label=T["download_excel"] + " (combined)",
+                data=output,
+                file_name=f"chart_combined.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
